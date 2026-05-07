@@ -1,0 +1,263 @@
+<!doctype html>
+<html class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Water Monitor - Live</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .sensor-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .sensor-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1f2e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3b4564;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body class="h-full">
+    <div id="app" class="w-full h-full bg-[#0f1219] text-[#e2e8f0] overflow-auto">
+        <header class="px-6 py-4 border-b border-[#1e2538] flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-white">ESP32 Water Monitor</h1>
+                <p class="text-sm text-[#64748b] mt-0.5">Live ThingSpeak Feed • <span id="live-time"></span></p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="fetchThingSpeakData()"
+                    class="flex items-center gap-2 bg-[#3b82f6] hover:bg-[#2563eb] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Sync Now
+                </button>
+                <button id="download-btn"
+                    class="flex items-center gap-2 bg-[#1e2538] hover:bg-[#2a3349] text-[#94a3b8] px-4 py-2 rounded-lg text-sm font-medium border border-[#2a3349] transition-colors">
+                    <i data-lucide="download" style="width:16px;height:16px;"></i> Export CSV
+                </button>
+            </div>
+        </header>
+
+        <main class="p-6 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="sensor-card bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <div class="flex items-center justify-between mb-3"><span
+                            class="text-xs font-medium text-[#64748b] uppercase tracking-wider">TDS</span>
+                        <div class="w-8 h-8 rounded-lg bg-[#06b6d4]/10 flex items-center justify-center"><i
+                                data-lucide="droplets" style="width:16px;height:16px;color:#06b6d4;"></i></div>
+                    </div>
+                    <p id="val-tds" class="text-3xl font-bold text-white">--</p>
+                    <p class="text-xs text-[#64748b] mt-1">ppm</p>
+                </div>
+                <div class="sensor-card bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <div class="flex items-center justify-between mb-3"><span
+                            class="text-xs font-medium text-[#64748b] uppercase tracking-wider">Temperature</span>
+                        <div class="w-8 h-8 rounded-lg bg-[#f97316]/10 flex items-center justify-center"><i
+                                data-lucide="thermometer" style="width:16px;height:16px;color:#f97316;"></i></div>
+                    </div>
+                    <p id="val-temp" class="text-3xl font-bold text-white">--</p>
+                    <p class="text-xs text-[#64748b] mt-1">°C</p>
+                </div>
+                <div class="sensor-card bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <div class="flex items-center justify-between mb-3"><span
+                            class="text-xs font-medium text-[#64748b] uppercase tracking-wider">Flow Rate</span>
+                        <div class="w-8 h-8 rounded-lg bg-[#10b981]/10 flex items-center justify-center"><i
+                                data-lucide="waves" style="width:16px;height:16px;color:#10b981;"></i></div>
+                    </div>
+                    <p id="val-flow" class="text-3xl font-bold text-white">--</p>
+                    <p class="text-xs text-[#64748b] mt-1">L/min</p>
+                </div>
+                <div class="sensor-card bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <div class="flex items-center justify-between mb-3"><span
+                            class="text-xs font-medium text-[#64748b] uppercase tracking-wider">Pressure</span>
+                        <div class="w-8 h-8 rounded-lg bg-[#8b5cf6]/10 flex items-center justify-center"><i
+                                data-lucide="gauge" style="width:16px;height:16px;color:#8b5cf6;"></i></div>
+                    </div>
+                    <p id="val-pressure" class="text-3xl font-bold text-white">--</p>
+                    <p class="text-xs text-[#64748b] mt-1">bar</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">TDS Trend</h3>
+                    <div class="h-[200px]"><canvas id="chart1"></canvas></div>
+                </div>
+                <div class="bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">Flow Rate Trend</h3>
+                    <div class="h-[200px]"><canvas id="chart3"></canvas></div>
+                </div>
+                <div class="bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">Temperature Trend</h3>
+                    <div class="h-[200px]"><canvas id="chart2"></canvas></div>
+                </div>
+                <div class="bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">Pressure Trend</h3>
+                    <div class="h-[200px]"><canvas id="chart4"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">Analytics Summary</h3>
+                    <div id="analytics-summary" class="space-y-3 text-sm">
+                        <p class="text-[#64748b]">Loading ThingSpeak data...</p>
+                    </div>
+                </div>
+                <div class="lg:col-span-2 bg-[#1a1f2e] rounded-xl p-5 border border-[#1e2538]">
+                    <h3 class="text-sm font-semibold text-[#94a3b8] mb-4">Recent Readings</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead>
+                                <tr class="text-[#64748b] text-xs uppercase border-b border-[#1e2538]">
+                                    <th class="pb-3">Timestamp</th>
+                                    <th class="pb-3 text-right">TDS</th>
+                                    <th class="pb-3 text-right">Temp</th>
+                                    <th class="pb-3 text-right">Flow</th>
+                                    <th class="pb-3 text-right">Pressure</th>
+                                </tr>
+                            </thead>
+                            <tbody id="readings-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const CHANNEL_ID = '3369104';
+        let allData = [];
+        let charts = {};
+
+        function initCharts() {
+            const createConfig = (label, color) => ({
+                type: 'line',
+                data: { labels: [], datasets: [{ label, data: [], borderColor: color, backgroundColor: `${color}1A`, fill: true, tension: 0.4, pointRadius: 2 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 6 }, grid: { color: '#1e2538' } },
+                        y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e2538' } }
+                    }
+                }
+            });
+
+            charts.tds = new Chart(document.getElementById('chart1'), createConfig('TDS (ppm)', '#06b6d4'));
+            charts.temp = new Chart(document.getElementById('chart2'), createConfig('Temp (°C)', '#f97316'));
+            charts.flow = new Chart(document.getElementById('chart3'), createConfig('Flow (L/min)', '#10b981'));
+            charts.pressure = new Chart(document.getElementById('chart4'), createConfig('Pressure (bar)', '#8b5cf6'));
+        }
+
+        async function fetchThingSpeakData() {
+            const url = `https://api.thingspeak.com/channels/${CHANNEL_ID}/feeds.json?results=30`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                allData = data.feeds.map(f => ({
+                    timestamp: f.created_at,
+                    temperature: parseFloat(f.field1) || 0,
+                    flow_rate: parseFloat(f.field2) || 0,
+                    pressure: parseFloat(f.field3) || 0,
+                    tds: parseFloat(f.field4) || 0
+                })).reverse();
+
+                updateUI();
+            } catch (error) {
+                console.error('ThingSpeak Fetch Error:', error);
+            }
+        }
+
+        function updateUI() {
+            if (allData.length === 0) return;
+            const latest = allData[0];
+
+            // Update Big Values
+            document.getElementById('val-tds').textContent = latest.tds.toFixed(0);
+            document.getElementById('val-temp').textContent = latest.temperature.toFixed(1);
+            document.getElementById('val-flow').textContent = latest.flow_rate.toFixed(2);
+            document.getElementById('val-pressure').textContent = latest.pressure.toFixed(2);
+
+            // Update 4 Separate Charts
+            const chrono = [...allData].reverse();
+            const labels = chrono.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+            const updateChart = (chart, data) => {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = data;
+                chart.update('none');
+            };
+
+            updateChart(charts.tds, chrono.map(d => d.tds));
+            updateChart(charts.temp, chrono.map(d => d.temperature));
+            updateChart(charts.flow, chrono.map(d => d.flow_rate));
+            updateChart(charts.pressure, chrono.map(d => d.pressure));
+
+            // Update Table (Newest 10)
+            document.getElementById('readings-table').innerHTML = allData.slice(0, 10).map(item => {
+                const ts = new Date(item.timestamp);
+                return `
+                <tr class="border-b border-[#1e2538] hover:bg-[#1e2538]/50">
+                    <td class="py-3 text-[#94a3b8]">${ts.toLocaleDateString()} ${ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td class="py-3 text-right text-[#06b6d4]">${item.tds.toFixed(0)}</td>
+                    <td class="py-3 text-right text-[#f97316]">${item.temperature.toFixed(1)}</td>
+                    <td class="py-3 text-right text-[#10b981]">${item.flow_rate.toFixed(2)}</td>
+                    <td class="py-3 text-right text-[#8b5cf6]">${item.pressure.toFixed(2)}</td>
+                </tr>
+            `;
+            }).join('');
+
+            // Update Analytics
+            const avg = (key) => (allData.reduce((s, d) => s + d[key], 0) / allData.length).toFixed(1);
+            document.getElementById('analytics-summary').innerHTML = `
+            <div class="flex justify-between"><span class="text-[#64748b]">Total Samples</span><span class="text-white">${allData.length}</span></div>
+            <div class="flex justify-between"><span class="text-[#64748b]">Avg TDS</span><span class="text-[#06b6d4]">${avg('tds')} ppm</span></div>
+            <div class="flex justify-between"><span class="text-[#64748b]">Avg Temp</span><span class="text-[#f97316]">${avg('temperature')} °C</span></div>
+            <div class="flex justify-between"><span class="text-[#64748b]">Avg Flow</span><span class="text-[#10b981]">${avg('flow_rate')} L/m</span></div>
+        `;
+        }
+
+        // CSV Export
+        document.getElementById('download-btn').addEventListener('click', () => {
+            if (allData.length === 0) return;
+            let csv = 'Timestamp,TDS(ppm),Temp(C),Flow(L/min),Pressure(bar)\n';
+            allData.forEach(d => { csv += `${d.timestamp},${d.tds},${d.temperature},${d.flow_rate},${d.pressure}\n`; });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `water_data_${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+        });
+
+        setInterval(() => { document.getElementById('live-time').textContent = new Date().toLocaleTimeString(); }, 1000);
+        initCharts();
+        fetchThingSpeakData();
+        setInterval(fetchThingSpeakData, 20000); // Auto-refresh every 20 seconds
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>
